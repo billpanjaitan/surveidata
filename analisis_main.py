@@ -1,33 +1,49 @@
 from typing import List, Optional
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from scipy.stats import pearsonr, spearmanr, chi2_contingency, normaltest
-import nltk
-from nltk.corpus import stopwords
+import os
+import base64
 import string
-from collections import Counter
 import time
+from collections import Counter
 from io import BytesIO
+
+import matplotlib.pyplot as plt
+import nltk
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import streamlit as st
+from nltk.corpus import stopwords
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
-import itertools
+from reportlab.pdfgen import canvas
+from scipy.stats import pearsonr, spearmanr, chi2_contingency, normaltest
 
 # ------------------------------------------------------------
-# Page config 
+# Page config
 # ------------------------------------------------------------
 st.set_page_config(page_title="Survey Data", layout="wide")
 
-# ------------------------------------------------------------
-# Background video helper
-# ------------------------------------------------------------
-def set_video_background(video_file: str):
-    # video_file bisa "background.mp4" atau path lain, misalnya "assets/bg.mp4"
-    video_url = video_file
+# --------------------------- NLTK INIT ---------------------------
+try:
+    _ = stopwords.words("english")
+except LookupError:
+    nltk.download("stopwords")
+EN_STOPWORDS = set(stopwords.words("english"))
+PUNCTUATION_TABLE = str.maketrans("", "", string.punctuation)
+
+# ---------- VIDEO BACKGROUND (full-screen) ----------
+def set_video_background(video_path: str) -> None:
+    """Set an mp4 video as full-screen background using HTML/CSS (base64)."""
+    if not os.path.exists(video_path):
+        st.warning(f"Video background tidak ditemukan: {video_path}")
+        return
+
+    with open(video_path, "rb") as f:
+        data = f.read()
+    b64 = base64.b64encode(data).decode("utf-8")
+    video_data_url = f"data:video/mp4;base64,{b64}"
+
     st.markdown(
         f"""
         <style>
@@ -42,20 +58,13 @@ def set_video_background(video_file: str):
             z-index: -1;
             object-fit: cover;
         }}
-        .overlay-bg {{
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.4);
-            z-index: -1;
+        .stApp {{
+            background: transparent !important;
         }}
         </style>
         <video class="video-bg" autoplay muted loop playsinline>
-            <source src="{video_url}" type="video/mp4">
+            <source src="{video_data_url}" type="video/mp4">
         </video>
-        <div class="overlay-bg"></div>
         """,
         unsafe_allow_html=True,
     )
@@ -667,12 +676,6 @@ def get_text(key: str) -> str:
         return TEXTS["EN"][key]
     return key
 
-try:
-    STOPWORDS_EN = set(stopwords.words("english"))
-except LookupError:
-    nltk.download("stopwords")
-    STOPWORDS_EN = set(stopwords.words("english"))
-
 def apply_theme():
     dark = st.session_state.get("dark_mode", False)
     if dark:
@@ -715,12 +718,11 @@ def load_data(file) -> Optional[pd.DataFrame]:
 
 def preprocess_text_series(series: pd.Series):
     tokens_all = []
-    translator = str.maketrans("", "", string.punctuation)
     for val in series.dropna():
         text = str(val).lower()
-        text = text.translate(translator)
+        text = text.translate(PUNCTUATION_TABLE)
         for tok in text.split():
-            if tok and tok not in STOPWORDS_EN:
+            if tok and tok not in EN_STOPWORDS:
                 tokens_all.append(tok)
     counter = Counter(tokens_all)
     return tokens_all, counter
@@ -1032,7 +1034,7 @@ def main():
         st.session_state["dark_mode"] = False
 
     # Background video
-    set_video_background("app/static/background.mp4")
+    set_video_background("static/background.mp4")
 
     # Top bar
     top_left, top_right = st.columns([3, 2])
@@ -1065,12 +1067,12 @@ def main():
     if dark:
         page_bg = "transparent"
         text_color = "#f5f5f5"
-        card_bg = "rgba(20, 20, 20, 0.95)"
+        card_bg = "rgba(20, 20, 20, 0.92)"
         border_color = "#444444"
     else:
         page_bg = "transparent"
         text_color = "#000000"
-        card_bg = "rgba(255, 255, 255, 0.95)"
+        card_bg = "rgba(255, 255, 255, 0.92)"
         border_color = "#cccccc"
 
     st.markdown(
@@ -1177,6 +1179,7 @@ def main():
         ]
     )
 
+    # Tab Deskriptif
     with tab_desc:
         if not numeric_cols and not cat_cols:
             st.warning(get_text("no_numeric") + " " + get_text("no_categorical"))
@@ -1242,6 +1245,7 @@ def main():
                 else:
                     st.info(get_text("no_categorical"))
 
+    # Tab Visual
     with tab_visual:
         st.markdown(f"### {get_text('tab_visual')}")
         st.markdown(
@@ -1329,6 +1333,7 @@ def main():
         else:
             st.info(get_text("no_categorical"))
 
+    # Tab Korelasi
     with tab_corr:
         st.markdown(f"### {get_text('tab_corr')}")
         st.markdown(
@@ -1426,6 +1431,7 @@ def main():
         else:
             st.info(get_text("no_numeric"))
 
+    # Tab Teks
     with tab_text:
         st.markdown(f"### {get_text('tab_text')}")
         st.caption(get_text("text_processing_note"))
@@ -1471,4 +1477,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
