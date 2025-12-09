@@ -1032,7 +1032,7 @@ def main():
         st.session_state["dark_mode"] = False
 
     # Background video
-    set_video_background("static/background.mp4")
+    set_video_background("app/static/background.mp4")
 
     # Top bar
     top_left, top_right = st.columns([3, 2])
@@ -1471,3 +1471,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
