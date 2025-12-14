@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+import itertools
 import os
 import base64
 import string
@@ -19,9 +20,6 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from scipy.stats import pearsonr, spearmanr, chi2_contingency, normaltest
 
-# ------------------------------------------------------------
-# Page config
-# ------------------------------------------------------------
 st.set_page_config(page_title="Survey Data", layout="wide")
 
 # --------------------------- NLTK INIT ---------------------------
@@ -162,6 +160,27 @@ TEXTS = {
         "pdf_generated_on": "Generated on %Y-%m-%d %H:%M:%S 🕒",
         "pdf_dataset_metadata": "Dataset metadata ℹ️",
         "pdf_numeric_stats": "Numeric column statistics 🔢",
+        "pdf_scatter_plots": "Scatter plots for numeric pairs �",
+        "pdf_ready": "Your PDF report is ready, use the button below to download it ✅.",
+        "pdf_download": "Download PDF report 📥",
+        "pdf_filename": "survey_report_en.pdf",
+        "no_numeric": "No numeric columns were detected in this dataset ⚠️.",
+        "no_categorical": "No categorical columns were detected in this dataset ⚠️.",
+        "no_text": "No text columns were detected in this dataset ⚠️.",
+        "loading_pdf": "Building your PDF report, please wait ⏳.",
+        "scatter_note": "The scatter plot only uses rows where both selected columns have valid values ✅.",
+        "matrix_note": "The correlation matrix is computed using the Pearson method for all numeric columns 📐.",
+        "text_processing_note": "Text is lowercased, punctuation is removed, and English stopwords are filtered out 🧹.",
+        "app_footer": "Built with Streamlit · Survey analysis assistant 💡.",
+        "team_members_title": "Team members 👥",
+        "team_members_box_title": "Project team 👥",
+        "team_member_1": "Regina Vinta Amanullah (004202400133) 🎓",
+        "team_member_2": "Bill Christian Panjaitan (004202400058) 🎓",
+        "team_member_3": "Putri Lasrida Malau (004202400132) 🎓",
+        "team_member_4": "Elizabeth Kurniawan (004202400001) 🎓",
+        "pdf_generated_on": "Generated on %Y-%m-%d %H:%M:%S 🕒",
+        "pdf_dataset_metadata": "Dataset metadata ℹ️",
+        "pdf_numeric_stats": "Numeric column statistics 🔢",
         "pdf_scatter_plots": "Scatter plots for numeric pairs 🔍",
         "pdf_cat_cols": "Categorical columns (top 10 categories) 🧩",
         "pdf_text_summary": "Text analysis summary (top 10 words per column) 💬",
@@ -190,6 +209,14 @@ TEXTS = {
         "quick_interp_scatter_2": "A downward pattern suggests a negative relationship, while a cloud of points suggests little or no linear relationship 📉.",
         "quick_interp_corr_1": "Correlations close to +1 or -1 indicate a strong linear relationship between the variables 📐.",
         "quick_interp_corr_2": "Correlations near 0 suggest little or no linear relationship ⚖️.",
+        "x_total": "X Total",
+        "y_total": "Y Total",
+        "x_total_interp": "X Total is the sum of all values in the 'x' column.",
+        "y_total_interp": "Y Total is the sum of all values in the 'y' column.",
+        "rows_interp": "Number of rows in the dataset.",
+        "cols_interp": "Number of columns in the dataset.",
+        "num_cols_interp": "Number of numeric columns.",
+        "cat_cols_interp": "Number of categorical columns.",
     },
     "ID": {
         "title": "Dasbor Analisis Survei 📊",
@@ -308,6 +335,14 @@ TEXTS = {
         "quick_interp_scatter_2": "Pola yang cenderung turun menunjukkan hubungan negatif, sedangkan titik menyebar acak menandakan hubungan linear yang lemah atau tidak ada 📉.",
         "quick_interp_corr_1": "Korelasi mendekati +1 atau -1 menandakan hubungan linear yang kuat antara variabel 📐.",
         "quick_interp_corr_2": "Korelasi mendekati 0 menandakan hubungan linear yang lemah atau hampir tidak ada ⚖️.",
+        "x_total": "Total X",
+        "y_total": "Total Y",
+        "x_total_interp": "Total X adalah jumlah semua nilai di kolom 'x'.",
+        "y_total_interp": "Total Y adalah jumlah semua nilai di kolom 'y'.",
+        "rows_interp": "Jumlah baris dalam dataset.",
+        "cols_interp": "Jumlah kolom dalam dataset.",
+        "num_cols_interp": "Jumlah kolom numerik.",
+        "cat_cols_interp": "Jumlah kolom kategorikal.",
     },
     "JP": {
         "title": "アンケート分析ダッシュボード 📊",
@@ -732,6 +767,7 @@ def descriptive_stats(series: pd.Series):
     if s.empty:
         return None
     desc = {
+        "sum": s.sum(),
         "mean": s.mean(),
         "median": s.median(),
         "mode": s.mode().iloc[0] if not s.mode().empty else np.nan,
@@ -1146,6 +1182,30 @@ def main():
         else:
             text_cols.append(col)
 
+    # Compute x_total and y_total as sum of all columns starting with 'X' and 'Y'
+    x_cols = [col for col in numeric_cols if col.startswith('X')]
+    y_cols = [col for col in numeric_cols if col.startswith('Y')]
+    x_total = df[x_cols].sum().sum() if x_cols else None
+    y_total = df[y_cols].sum().sum() if y_cols else None
+
+    # Compute normality test for X and Y columns
+    x_normal_p = None
+    if x_cols:
+        x_values = df[x_cols].values.flatten()
+        if len(x_values) >= 8:
+            try:
+                _, x_normal_p = normaltest(x_values)
+            except:
+                pass
+    y_normal_p = None
+    if y_cols:
+        y_values = df[y_cols].values.flatten()
+        if len(y_values) >= 8:
+            try:
+                _, y_normal_p = normaltest(y_values)
+            except:
+                pass
+
     # Preview box
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader(get_text("preview_title"))
@@ -1155,17 +1215,31 @@ def main():
     # Overview box
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader(get_text("summary_title"))
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
         st.metric(get_text("rows"), df.shape[0])
-    with c2:
+        st.caption(get_text("rows_interp"))
+    with col2:
         st.metric(get_text("cols"), df.shape[1])
-    with c3:
+        st.caption(get_text("cols_interp"))
+    with col3:
         st.metric(get_text("num_cols"), len(numeric_cols))
-    with c4:
+        st.caption(get_text("num_cols_interp"))
+    with col4:
         st.metric(get_text("cat_cols"), len(cat_cols))
-    if text_cols:
-        st.caption(f"{get_text('text_cols')}: {', '.join(text_cols)}")
+        st.caption(get_text("cat_cols_interp"))
+
+    if x_total is not None or y_total is not None:
+        st.markdown("---")
+        col_x, col_y = st.columns(2)
+        with col_x:
+            if x_total is not None:
+                st.metric(get_text("x_total"), f"{x_total:.2f}")
+                st.caption(get_text("x_total_interp"))
+        with col_y:
+            if y_total is not None:
+                st.metric(get_text("y_total"), f"{y_total:.2f}")
+                st.caption(get_text("y_total_interp"))
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Tabs box
@@ -1187,45 +1261,12 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown(f"#### {get_text('desc_stats_title')}")
-                if numeric_cols:
-                    num_col = st.selectbox(
-                        get_text("select_numeric_col"),
-                        numeric_cols,
-                        key="desc_num_col",
-                    )
-                    s = df[num_col]
-                    desc = descriptive_stats(s)
-                    if desc:
-                        st.write(
-                            {
-                                "mean": desc["mean"],
-                                "median": desc["median"],
-                                "mode": desc["mode"],
-                                "min": desc["min"],
-                                "max": desc["max"],
-                                "std": desc["std"],
-                                "count": desc["count"],
-                            }
-                        )
-                        st.markdown(f"**{get_text('normaltest_title')}**")
-                        if desc["normaltest_stat"] is None:
-                            st.info(get_text("normaltest_not_enough"))
-                        else:
-                            st.write(
-                                {
-                                    get_text("statistic"): desc["normaltest_stat"],
-                                    get_text("pvalue"): desc["normaltest_p"],
-                                    "α": 0.05,
-                                }
-                            )
-                            if desc["normaltest_p"] < 0.05:
-                                st.warning(get_text("not_normal_interpret"))
-                            else:
-                                st.success(get_text("normal_interpret"))
-                    else:
-                        st.info(get_text("no_valid_data"))
-                else:
-                    st.warning(get_text("no_numeric"))
+                if x_total is not None:
+                    st.metric(get_text("x_total"), f"{x_total:.2f}")
+                if y_total is not None:
+                    st.metric(get_text("y_total"), f"{y_total:.2f}")
+                if x_total is None and y_total is None:
+                    st.info("No columns starting with 'X' or 'Y' found.")
             with col2:
                 st.markdown(
                     f"#### {get_text('hist_title')} & {get_text('box_title')}"
